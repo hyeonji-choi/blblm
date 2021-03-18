@@ -2,10 +2,23 @@
 % Please edit documentation in R/blblm.R
 \name{lm_each_subsample}
 \alias{lm_each_subsample}
-\title{compute the estimates}
+\title{lmeachsubsample}
 \usage{
 lm_each_subsample(formula, data, n, B)
 }
-\description{
+\arguments{
+\item{formula}{the formula of choice - linear regression with weight in this case.}
+
+\item{data}{data of choice}
+
+\item{n}{a positive number, the number of samples.}
+
+\item{B}{B a posive integer. It represents a number of bootstrap samples.}
+}
+\value{
+linear regression of each subsample
 compute the estimates
+}
+\description{
+lmeachsubsample
 }
