@@ -2,10 +2,21 @@
 % Please edit documentation in R/blblm.R
 \name{lm1}
 \alias{lm1}
-\title{estimate the regression estimates based on given the number of repetitions}
+\title{lm1}
 \usage{
-lm1(formula, data, freqs)
+lm1(X, y, n)
+}
+\arguments{
+\item{X}{x values}
+
+\item{y}{y values}
+
+\item{n}{number of samples}
+}
+\value{
+linear regression with weight, more specifically coefficiemt and sigma.
+compute the regression estimates for a blb dataset
 }
 \description{
-estimate the regression estimates based on given the number of repetitions
+lm1
 }

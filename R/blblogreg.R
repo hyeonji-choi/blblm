@@ -1,6 +1,4 @@
-#' @name blblm
-#' @aliases blblm-package
-#' @title blblm
+#' @title blblogreg
 #' @import purrr
 #' @import stats
 #' @import parallel
@@ -9,45 +7,47 @@
 #' @import tidyverse
 #' @importFrom magrittr %>%
 #' @importFrom utils capture.output 
-#' @details this is a package the calculate linera regression with a little bag of bootstraps.
-#' Linear Regression with Little Bag of Bootstraps
+#' @aliases blblm-package
+#' @aliases _PACKAGE
+#' @details this is a package that calculate logistic regression with a little bag of bootstraps.
+#' Logistic Regression with Little Bag of Bootstraps
 "_PACKAGE"
+#' NULL
 
 utils::globalVariables(c("."))
 ## quiets concerns of R CMD check re: the .'s that appear in pipelines
 # from https://github.com/jennybc/googlesheets/blob/master/R/googlesheets.R
 
-#' @export
-#' @title blblm
-#' @param formula  the formula of choice - linear regression with weight in this case.
+#' @title blblogreg
+#' @param formula  the formula of choice - logistic linear regression with weight in this case.
 #' @param data data of choice
 #' @param B B a posive integer. It represents a number of bootstrap samples.
-#' @param ncpu set as 1 in default which means the algorithm is implementing 1 CPU. The user can input any number of CPUs they would like to use.
+#' @param ncpu Parallel is set as TRUE in default which means the algorithm is implementing multiple CPUs, 4. The user can select FALSE to implement only one CPU.
 #' @param m a positive number, the number of items to choose from.
-#' @return logistic regression model
-
-blblm <- function(formula, data, m = 10, B = 5000, ncpu = 1) {
+#' @export
+blblogreg <- function(formula, data, m = 10, B = 5000, ncpu = 1) {
   if (!ncpu){
-    suppressWarnings(plan(multiprocess, workers = ncpu)) #make it an option
+    suppressWarnings(plan(multiprocess, workers = ncpu))
     options(future.rng.onMisuse = "ignore")
+    
     data_list <- split_data(data, m)
     estimates <- future_map(
       data_list,
-      ~ lm_each_subsample(formula = formula, data = ., n = nrow(data), B = B))
+      ~ logreg_each_subsample(formula = formula, data = ., n = nrow(data), B = B))
     res <- future_map(
       data_list,
       ~ list(estimates = estimates, formula = formula)
     )
-    class(res) <- "blblm"
+    class(res) <- "blblogreg"
     invisible(res)
   }
   else{
     data_list <- split_data(data, m)
     estimates <- map(
       data_list,
-      ~ lm_each_subsample(formula = formula, data = ., n = nrow(data), B = B))
+      ~ logreg_each_subsample(formula = formula, data = ., n = nrow(data), B = B))
     res <- list(estimates = estimates, formula = formula)
-    class(res) <- "blblm"
+    class(res) <- "blblogreg"
     invisible(res)
   }
 }
@@ -58,35 +58,33 @@ split_data <- function(data, m) {
   data %>% split(idx)
 }
 
-#' @title lmeachsubsample
-#' @param formula  the formula of choice - linear regression with weight in this case.
+#' @title logistic regression of each subsample
+#' @param formula  the formula of choice - logistic regression with weight in this case.
 #' @param data data of choice
 #' @param B B a posive integer. It represents a number of bootstrap samples.
 #' @param n a positive number, the number of samples.
-#' @return linear regression of each subsample
+#' @return linear regression of each subsample with bootstrap
 #' compute the estimates
-lm_each_subsample <- function(formula, data, n, B) {
+logreg_each_subsample <- function(formula, data, n, B) {
   # drop the original closure of formula,
   # otherwise the formula will pick a wrong variable from the global scope.
   environment(formula) <- environment()
-  m <- model.frame(formula, data)
-  X <- model.matrix(formula, m)
-  y <- model.response(m)
-  replicate(B, lm1(X, y, n), simplify = FALSE)
+  freqs <- as.vector(rmultinom(1, n, rep(1, nrow(data))))
+  replicate(B, logreg1(data, formula, freqs), simplify = FALSE)
 }
 
-#' @title lm1
-#' @param X x values
-#' @param y y values
-#' @param n number of samples
-#' @return linear regression with weight, more specifically coefficiemt and sigma. 
+#' @title logistic regression coefficient and sigma
+#' @param data data
+#' @param formula formula
+#' @param freqs frequency
+#' @return logistic regression
 #' compute the regression estimates for a blb dataset
-lm1 <- function(X, y, n) {
-  freqs <- as.vector(rmultinom(1, n, rep(1, nrow(X))))
-  fit <- lm.wfit(X, y, freqs)
-  list(coef = blbcoef(fit), sigma = blbsigma(fit))
+logreg1 <- function(data, formula, freqs) {
+  fit <- glm(formula, family = "binomial", data, weights = freqs)
+  list(coef = blbcoef(fit), odds = blbodd(fit))
 }
 
+#' @title coefficient of blb
 #' @param fit fit
 #' @return coefficient of the fit
 #' compute the coefficients from fit
@@ -94,37 +92,30 @@ blbcoef <- function(fit) {
   coef(fit)
 }
 
-#' @param fit fit
-#' @return sigma of the fit
-#' compute sigma from fit
-blbsigma <- function(fit) {
-  p <- fit$rank
-  e <- fit$residuals
-  w <- fit$weights
-  sqrt(sum(w * (e^2)) / (sum(w) - p))
+blbodd <- function(fit){
+  exp(coef(fit))
 }
 
 
-#' @export
-#' @title printblblm
-#' @method print blblm
+#' @title printblblogreg
+#' @method print blblogreg
 #' @param x x values
-#' @return 
-print.blblm <- function(x, ...) {
-  cat("blblm model:", capture.output(x$formula))
+#' @param ... unused variables
+#' @export
+print.blblogreg <- function(x, ...) {
+  cat("blblogreg model:", capture.output(x$formula))
   cat("\n")
 }
 
-
 #' @export
-#' @title sigmablblm
-#' @method sigma blblm
+#' @title sigmablblogreg
+#' @method sigma blblogreg
 #' @param object object
 #' @param confidence whether or not the result shows upper and lower limits at 0.95 confidence level. Default is FALSE.
 #' @param level this is a confidence level, default at 0.96=5.
 #' @param ncpu positive interger, number of CPU. Default to be 1 which represents one CPU. 
-#' @return 
-sigma.blblm <- function(object, confidence = FALSE, level = 0.95, ncpu = 1, ...) {
+#' @param ... unused variables
+sigma.blblogreg <- function(object, confidence = FALSE, level = 0.95, ncpu = 1, ...) {
   est <- object$estimates
   sigma <- mean(map_dbl(est, ~ mean(map_dbl(., "sigma"))))
   if (confidence) {
@@ -139,26 +130,26 @@ sigma.blblm <- function(object, confidence = FALSE, level = 0.95, ncpu = 1, ...)
 }
 
 #' @export
-#' @title coefblblm
-#' @method coef blblm
+#' @title coefblblogreg
+#' @method coef blblogreg
 #' @param object object
 #' @param ncpu positive interger, number of CPU. Default to be 1 which represents one CPU. 
-#' @return 
-coef.blblm <- function(object, ncpu = 1, ...) { #missing the parallel input
-    est <- object$estimates
-    map_mean(est, ~ map_cbind(., "coef") %>% rowMeans(), ncpu)
-  }
+#' @param ... unused variables
+coef.blblogreg <- function(object, ncpu = 1, ...) { #missing the parallel input
+  est <- object$estimates
+  map_mean(est, ~ map_cbind(., "coef") %>% rowMeans(), ncpu)
+}
 
 
 #' @export
-#' @title confintblblm
-#' @method confint blblm
+#' @title confintblblogreg
+#' @method confint blblogreg
 #' @param object object
 #' @param parm parameter. default is NULL
 #' @param level this is a confidence level, default at 0.96=5.
 #' @param ncpu positive interger, number of CPU. Default to be 1 which represents one CPU. 
-#' @return 
-confint.blblm <- function(object, parm = NULL, level = 0.95, ncpu = 1,...) {
+#' @param ... unused variables
+confint.blblogreg <- function(object, parm = NULL, level = 0.95, ncpu = 1,...) {
   if (is.null(parm)) {
     parm <- attr(terms(object$formula), "term.labels")
   }
@@ -175,16 +166,16 @@ confint.blblm <- function(object, parm = NULL, level = 0.95, ncpu = 1,...) {
 }
 
 #' @export
-#' @title predictblblm
-#' @method predict blblm
+#' @title predictblblogreg
+#' @method predict blblogreg
 #' @param object object
 #' @param confidence whether or not the result shows upper and lower limits at 0.95 confidence level. Default is FALSE.
 #' @param level this is a confidence level, default at 0.96=5.
 #' @param new_data new data that is being created.
 #' @param ncpu positive interger, number of CPU. Default to be 1 which represents one CPU. 
-#' @return 
-predict.blblm <- function(object, new_data, confidence = FALSE, level = 0.95, ncpu = 1, ...) {
-  est <- object$estimates
+#' @param ... unused variables
+predict.blblogreg <- function(object, new_data, confidence = FALSE, level = 0.95, ncpu = 1, ...) {
+  est <- object$estimatesk
   X <- model.matrix(reformulate(attr(terms(object$formula), "term.labels")), new_data)
   if (confidence) {
     map_mean(est, ~ map_cbind(., ~ X %*% .$coef) %>%
@@ -194,29 +185,5 @@ predict.blblm <- function(object, new_data, confidence = FALSE, level = 0.95, nc
     map_mean(est, ~ map_cbind(., ~ X %*% .$coef) %>% rowMeans(), ncpu)
   }
 }
-
-mean_lwr_upr <- function(x, level = 0.95) {
-  alpha <- 1 - level
-  c(fit = mean(x), quantile(x, c(alpha / 2, 1 - alpha / 2)) %>% set_names(c("lwr", "upr")))
-}
-
-map_mean <- function(.x, .f, ncpu = 1,...) {
-  if(!ncpu){
-    suppressWarnings(plan(multiprocess, workers = ncpu))
-    options(future.rng.onMisuse = "ignore")
-    (future_map(.x, .f, ...) %>% reduce(`+`)) / length(.x)
-  }
-  else{
-    (map(.x, .f, ...) %>% reduce(`+`)) / length(.x)
-    }
-  }
-
-map_cbind <- function(.x, .f, ...) {
-  map(.x, .f, ...) %>% reduce(cbind)
-}
-
-map_rbind <- function(.x, .f, ...) {
-  map(.x, .f, ...) %>% reduce(rbind)
-}
-
-system.time(blblm(mpg ~ wt * hp, data = mtcars, m = 10, B = 10000, 4))
+  
+  
